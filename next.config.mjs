@@ -6,8 +6,9 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  assetPrefix: './',
-  basePath: '',
+  experimental: {
+    appDir: true
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
