@@ -13,14 +13,13 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false
-    },
-    icon: path.join(__dirname, 'build/icon.png') // optionnel
+    }
   });
 
-  // Charger l'app React
+  // Charger l'app Next.js
   const startUrl = isDev 
     ? 'http://localhost:3000' 
-    : `file://${path.join(__dirname, '../build/index.html')}`;
+    : `file://${path.join(__dirname, 'out/index.html')}`;
   
   mainWindow.loadURL(startUrl);
 
