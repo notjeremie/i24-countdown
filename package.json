@@ -19,6 +19,7 @@
     "clsx": "^2.0.0",
     "lucide-react": "^0.263.1",
     "next": "14.0.0",
+    "next-themes": "^0.2.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tailwind-merge": "^1.14.0",
@@ -39,8 +40,8 @@
     "typescript": "^5"
   },
   "build": {
-    "appId": "com.monapp.desktop",
-    "productName": "Mon App Desktop",
+    "appId": "com.i24countdown.desktop",
+    "productName": "i24 Countdown",
     "directories": {
       "output": "dist"
     },
