@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,7 +16,11 @@ interface Timer {
   label: string
 }
 
-export default function CountdownTimer() {
+interface CountdownTimerProps {
+  roomCode: string
+}
+
+export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
   const [timers, setTimers] = useState<Timer[]>([
     {
       id: 0,
@@ -44,46 +47,215 @@ export default function CountdownTimer() {
   const [selectedTimer, setSelectedTimer] = useState<number | null>(0)
   const [editingLabel, setEditingLabel] = useState<number | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  const [showQR, setShowQR] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("connecting")
+  const [retryCount, setRetryCount] = useState(0)
+  const maxRetries = 5
+  const retryDelay = 1000 // milliseconds
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Sync with server
-  useEffect(() => {
-    const eventSource = new EventSource("/api/timers/stream")
+  // Generate mobile URL and QR code
+  const mobileUrl = `${window.location.origin}/mobile/${roomCode}`
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(mobileUrl)}`
 
-    eventSource.onopen = () => {
+  // Copy room code to clipboard
+  const copyRoomCode = () => {
+    navigator.clipboard.writeText(roomCode)
+  }
+
+  // Copy mobile URL to clipboard
+  const copyMobileUrl = () => {
+    navigator.clipboard.writeText(mobileUrl)
+  }
+
+  const resetHeartbeat = () => {
+    clearTimeout(heartbeatTimeoutRef.current as NodeJS.Timeout)
+    heartbeatTimeoutRef.current = setTimeout(() => {
+      console.log("Heartbeat timeout: closing connection")
+      closeEventSource()
+      setConnectionStatus("disconnected")
+    }, 5000) // 5 seconds
+  }
+
+  const closeEventSource = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+  }
+
+  // -----------------------------------------------------------------------------------------------------------------
+  // SAFER SSE CONNECTION — silently handles the common "{ isTrusted:true }" browser Event,
+  // distinguishes between a transient network error and an explicit server close, and
+  // keeps trying forever with exponential back-off (max 30 s) without spamming the log.
+  // -----------------------------------------------------------------------------------------------------------------
+  const connect = useCallback(() => {
+    // clean up any previous stream & heartbeat timer
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+    clearTimeout(heartbeatTimeoutRef.current as NodeJS.Timeout)
+
+    setConnectionStatus("connecting")
+    console.log("[SSE] connecting …")
+
+    const es = new EventSource(`/api/timers/stream?roomCode=${roomCode}`)
+    eventSourceRef.current = es
+
+    // ❶ Heartbeat watchdog – any message (state / update / heartbeat) resets it
+    const resetHeartbeat = () => {
+      clearTimeout(heartbeatTimeoutRef.current as NodeJS.Timeout)
+      heartbeatTimeoutRef.current = setTimeout(() => {
+        console.warn("[SSE] heartbeat missed – reconnecting")
+        es.close()
+        reconnect()
+      }, 60_000) // 60 s
+    }
+
+    es.onopen = () => {
+      console.log("[SSE] open")
+      resetHeartbeat()
+      setRetryCount(0)
       setIsConnected(true)
+      setConnectionStatus("connected")
     }
 
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.timers) {
-        setTimers(data.timers)
-      }
-      if (data.selectedTimer !== undefined) {
-        setSelectedTimer(data.selectedTimer)
+    es.onmessage = (evt) => {
+      resetHeartbeat()
+
+      // Server may occasionally push keep-alive objects
+      if (evt.data === "heartbeat") return
+
+      try {
+        const data = JSON.parse(evt.data)
+        console.log("[Desktop] Received SSE data:", data) // Debug logging
+
+        if (data.type === "connected") {
+          console.log("[Desktop] Connection confirmed by server")
+        } else if (data.type === "heartbeat") {
+          console.log("[Desktop] Heartbeat received")
+        } else if (data.type === "state" || data.type === "update" || data.timers) {
+          // Update timers state
+          if (data.timers) {
+            console.log("[Desktop] Updating timers:", data.timers)
+            setTimers(data.timers)
+          }
+          // Update selected timer
+          if (data.selectedTimer !== undefined) {
+            console.log("[Desktop] Updating selected timer:", data.selectedTimer)
+            setSelectedTimer(data.selectedTimer)
+          }
+        }
+      } catch (error) {
+        console.error("[Desktop] Failed to parse SSE data:", error, evt.data)
       }
     }
 
-    eventSource.onerror = () => {
+    es.onerror = () => {
+      // Most browsers fire an Event object { isTrusted:true }. It is *not* an Exception.
+      // When readyState === CLOSED (2) the connection was intentionally closed and will
+      // normally auto-reconnect; otherwise treat it as a network hiccup.
+      if (es.readyState === EventSource.CLOSED) {
+        console.info("[SSE] closed by browser — waiting for automatic retry")
+        return
+      }
+
+      console.warn("[SSE] network error — forcing reconnect")
+      es.close()
+      reconnect()
+    }
+
+    // helper used by error & heartbeat timeout
+    function reconnect() {
       setIsConnected(false)
+      setConnectionStatus("disconnected")
+      const next = Math.min(1000 * 2 ** retryCount, 30_000)
+      setRetryCount((c) => c + 1)
+      setTimeout(connect, next)
+      console.log(`[SSE] reconnect in ${next / 1000}s (attempt ${retryCount + 1})`)
     }
+  }, [roomCode, retryCount])
+
+  useEffect(() => {
+    connect()
+
+    // Fetch initial state
+    fetch(`/api/timers?roomCode=${roomCode}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.timers) {
+          setTimers(data.timers)
+          setSelectedTimer(data.selectedTimer)
+        }
+      })
 
     return () => {
-      eventSource.close()
+      closeEventSource()
+      clearTimeout(heartbeatTimeoutRef.current as NodeJS.Timeout)
     }
-  }, [])
+  }, [roomCode, connect])
 
-  // Send updates to server
-  const syncToServer = useCallback(async (updates: any) => {
-    try {
-      await fetch("/api/timers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      })
-    } catch (error) {
-      console.error("Failed to sync to server:", error)
-    }
-  }, [])
+  // Send command to server (for keyboard input)
+  const sendCommand = useCallback(
+    async (command: string, value?: number) => {
+      try {
+        const payload: any = {
+          command,
+          roomCode,
+          timestamp: Date.now(),
+        }
+
+        if (command === "selectTimer") {
+          payload.value = value
+          payload.timerId = value
+        } else if (command === "enter") {
+          // Send the actual input value to ensure server uses correct time
+          payload.timerId = selectedTimer
+          payload.input = timers[selectedTimer || 0]?.input
+          payload.selectedMode = timers[selectedTimer || 0]?.selectedMode
+        } else {
+          payload.timerId = selectedTimer
+          if (value !== undefined) {
+            payload.value = value
+          }
+        }
+
+        console.log("[Desktop] Sending command:", payload) // Debug logging
+
+        const response = await fetch("/api/timers/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+
+        if (!response.ok) {
+          console.error("[Desktop] Command failed:", response.status, response.statusText)
+        } else {
+          console.log("[Desktop] Command sent successfully:", command)
+        }
+      } catch (error) {
+        console.error("Failed to send command:", error)
+      }
+    },
+    [roomCode, selectedTimer, timers],
+  )
+
+  // Send updates to server (for direct timer updates)
+  const syncToServer = useCallback(
+    async (updates: any) => {
+      try {
+        await fetch("/api/timers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...updates, roomCode }),
+        })
+      } catch (error) {
+        console.error("Failed to sync to server:", error)
+      }
+    },
+    [roomCode],
+  )
 
   // Format input as hh:mm:ss
   const formatInput = (value: string) => {
@@ -112,53 +284,33 @@ export default function CountdownTimer() {
     return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
-  // Update specific timer
-  const updateTimer = (id: number, updates: Partial<Timer>) => {
-    setTimers((prevTimers) => prevTimers.map((timer) => (timer.id === id ? { ...timer, ...updates } : timer)))
-    syncToServer({
-      timers: timers.map((timer) => (timer.id === id ? { ...timer, ...updates } : timer)),
-      selectedTimer: selectedTimer,
-    })
-  }
-
   // Handle input change for specific timer
   const handleInputChange = (id: number, value: string) => {
-    updateTimer(id, { input: value })
+    // Use command API for real-time sync
+    sendCommand("number", Number.parseInt(value.slice(-1)))
   }
 
   // Handle label change for specific timer
   const handleLabelChange = (id: number, value: string) => {
-    // Allow typing but enforce limits
     const processedValue = value
-
-    // Split into lines
     const lines = processedValue.split("\n")
-
-    // Limit to 2 lines, 5 chars each
     const limitedLines = []
     for (let i = 0; i < Math.min(lines.length, 2); i++) {
       limitedLines.push(lines[i].slice(0, 5))
     }
 
-    updateTimer(id, { label: limitedLines.join("\n") })
+    // Update local state and sync to server
+    const updatedTimers = timers.map((timer) =>
+      timer.id === id ? { ...timer, label: limitedLines.join("\n") } : timer,
+    )
+    setTimers(updatedTimers)
+    syncToServer({ timers: updatedTimers, selectedTimer })
   }
 
   // Handle Enter key press for specific timer
   const handleKeyPress = (id: number, e: React.KeyboardEvent, input: string) => {
     if (e.key === "Enter" && input) {
-      const timer = timers[id]
-      const mode = timer.selectedMode || "down" // Default to "down" if no mode selected
-
-      const formattedTime = formatInput(input)
-      const seconds = timeToSeconds(formattedTime)
-      if (seconds > 0) {
-        updateTimer(id, {
-          timeLeft: seconds, // Start from the entered time for both UP and DOWN
-          isInputMode: false,
-          isRunning: true,
-          isCountingUp: mode === "up",
-        })
-      }
+      sendCommand("enter")
     }
   }
 
@@ -172,7 +324,7 @@ export default function CountdownTimer() {
     // Handle numpad + key to select UP mode
     if (key === "+" || e.code === "NumpadAdd") {
       if (timer.isInputMode) {
-        handleModeSelect(selectedTimer, "up")
+        sendCommand("modeUp")
       }
       return
     }
@@ -180,7 +332,7 @@ export default function CountdownTimer() {
     // Handle numpad - key to select DOWN mode
     if (key === "-" || e.code === "NumpadSubtract") {
       if (timer.isInputMode) {
-        handleModeSelect(selectedTimer, "down")
+        sendCommand("modeDown")
       }
       return
     }
@@ -188,56 +340,25 @@ export default function CountdownTimer() {
     // If timer is running and user presses a number, stop it and reset to input mode
     if (/^\d$/.test(key)) {
       if (!timer.isInputMode) {
-        // Stop the running timer and reset it to input mode
-        if (intervalRefs.current[selectedTimer]) {
-          clearInterval(intervalRefs.current[selectedTimer]!)
-          intervalRefs.current[selectedTimer] = null
-        }
-        updateTimer(selectedTimer, {
-          isRunning: false,
-          isInputMode: true,
-          input: key, // Start with the pressed number
-          timeLeft: 0,
-          isCountingUp: false,
-          selectedMode: null,
-          label: timer.label, // Keep the label
-        })
+        sendCommand("delete")
+        // Then send the number
+        setTimeout(() => sendCommand("number", Number.parseInt(key)), 100)
       } else {
         // Normal input mode behavior
-        const currentInput = timer.input
-        if (currentInput.replace(/\D/g, "").length < 6) {
-          const newInput = currentInput + key
-          handleInputChange(selectedTimer, newInput)
-        }
+        sendCommand("number", Number.parseInt(key))
       }
     } else if (key === "Backspace" && timer.isInputMode) {
-      handleInputChange(selectedTimer, timer.input.slice(0, -1))
+      sendCommand("backspace")
     } else if (key === "Delete") {
-      // Reset the selected timer completely
-      if (intervalRefs.current[selectedTimer]) {
-        clearInterval(intervalRefs.current[selectedTimer]!)
-        intervalRefs.current[selectedTimer] = null
-      }
-      updateTimer(selectedTimer, {
-        isRunning: false,
-        isInputMode: true,
-        input: "",
-        timeLeft: 0,
-        isCountingUp: false,
-        selectedMode: null,
-        label: timer.label, // Keep the label
-      })
+      sendCommand("delete")
     } else if (key === "Enter" && timer.isInputMode) {
-      handleKeyPress(selectedTimer, e, timer.input)
+      sendCommand("enter")
     } else if (key === "Enter" && !timer.isInputMode) {
-      // Toggle pause/resume for running timer
-      updateTimer(selectedTimer, {
-        isRunning: !timer.isRunning,
-      })
+      sendCommand("pauseResume")
     }
   }
 
-  // Countdown/Countup effect for all timers
+  // Countdown/Countup effect for all timers - PRESERVE LABELS AND SYNC COMPLETION
   useEffect(() => {
     timers.forEach((timer) => {
       if (timer.isRunning) {
@@ -246,11 +367,26 @@ export default function CountdownTimer() {
             prevTimers.map((t) => {
               if (t.id === timer.id) {
                 if (t.isCountingUp) {
-                  // Count up from the entered time
                   return { ...t, timeLeft: t.timeLeft + 1 }
                 } else {
-                  // Count down to zero
                   if (t.timeLeft <= 1) {
+                    // Timer finished - preserve the label and sync to server
+                    console.log(`Timer ${timer.id} finished, syncing to server`)
+
+                    // Send completion to server immediately
+                    fetch("/api/timers/command", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        command: "timerFinished",
+                        roomCode,
+                        timerId: timer.id,
+                        timestamp: Date.now(),
+                      }),
+                    }).catch((error) => {
+                      console.error("Failed to sync timer completion:", error)
+                    })
+
                     return {
                       ...t,
                       timeLeft: 0,
@@ -258,7 +394,8 @@ export default function CountdownTimer() {
                       isInputMode: true,
                       input: "",
                       selectedMode: null,
-                      label: "",
+                      // KEEP the label - don't reset it!
+                      label: t.label,
                     }
                   }
                   return { ...t, timeLeft: t.timeLeft - 1 }
@@ -281,62 +418,48 @@ export default function CountdownTimer() {
         if (interval) clearInterval(interval)
       })
     }
-  }, [timers])
+  }, [timers, roomCode])
 
   // Reset specific timer
   const handleReset = (id: number) => {
-    if (intervalRefs.current[id]) {
-      clearInterval(intervalRefs.current[id]!)
-      intervalRefs.current[id] = null
-    }
-    updateTimer(id, {
-      isRunning: false,
-      isInputMode: true,
-      input: "",
-      timeLeft: 0,
-      isCountingUp: false,
-      selectedMode: null,
-      label: "",
-    })
+    sendCommand("delete")
   }
 
   const handleTimerClick = (timerId: number) => {
     setSelectedTimer(timerId)
-    syncToServer({ timers: timers, selectedTimer: timerId })
+    sendCommand("selectTimer", timerId)
   }
 
-  // Handle mode selection
   const handleModeSelect = (id: number, mode: "up" | "down") => {
-    updateTimer(id, { selectedMode: mode })
+    if (mode === "up") {
+      sendCommand("modeUp")
+    } else {
+      sendCommand("modeDown")
+    }
   }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle any keyboard input if we're editing a label
       if (editingLabel !== null) {
         return
       }
 
-      // Handle arrow key navigation - works regardless of timer state
       if (e.key === "ArrowUp") {
         e.preventDefault()
-        setSelectedTimer((prev) => {
-          if (prev === null) return 0
-          return prev > 0 ? prev - 1 : timers.length - 1
-        })
+        const newSelected = selectedTimer === null ? 0 : selectedTimer > 0 ? selectedTimer - 1 : timers.length - 1
+        setSelectedTimer(newSelected)
+        sendCommand("selectTimer", newSelected)
         return
       }
 
       if (e.key === "ArrowDown") {
         e.preventDefault()
-        setSelectedTimer((prev) => {
-          if (prev === null) return 0
-          return prev < timers.length - 1 ? prev + 1 : 0
-        })
+        const newSelected = selectedTimer === null ? 0 : selectedTimer < timers.length - 1 ? selectedTimer + 1 : 0
+        setSelectedTimer(newSelected)
+        sendCommand("selectTimer", newSelected)
         return
       }
 
-      // Arrow left to edit label
       if (e.key === "ArrowLeft") {
         e.preventDefault()
         if (selectedTimer !== null) {
@@ -345,7 +468,6 @@ export default function CountdownTimer() {
         return
       }
 
-      // Handle number input for selected timer only when NOT editing labels
       if (selectedTimer !== null) {
         handleNumberInput(e as any)
       }
@@ -357,9 +479,39 @@ export default function CountdownTimer() {
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-2 sm:p-4">
-      <div className="absolute top-4 right-4 z-10">
-        <div className={`inline-block w-3 h-3 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}></div>
+      {/* Room Info Header */}
+      <div className="absolute top-4 left-4 z-10">
+        <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+          <div className="text-white text-sm font-bold mb-1">Room Code</div>
+          <div className="flex items-center">
+            <div className="text-yellow-400 text-xl font-mono font-bold mr-2">{roomCode}</div>
+            <img src={qrCodeUrl || "/placeholder.svg"} alt="QR Code" className="w-12 h-12" />
+          </div>
+        </div>
       </div>
+
+      {/* Connection Status */}
+      <div className="absolute top-4 right-4 z-10">
+        <div className="bg-gray-800 rounded-lg p-2 border border-gray-700">
+          <div className="text-white text-xs mb-1">
+            Status:{" "}
+            {connectionStatus === "connected" ? (
+              <span className="text-green-500">Connected</span>
+            ) : connectionStatus === "connecting" ? (
+              <span className="text-yellow-500">Connecting...</span>
+            ) : (
+              <span className="text-red-500">Disconnected (Retry {retryCount})</span>
+            )}
+          </div>
+          <div className="flex items-center">
+            <div
+              className={`inline-block w-3 h-3 rounded-full mr-2 ${isConnected ? "bg-green-500" : "bg-red-500"}`}
+            ></div>
+            <span className="text-xs text-gray-400">Desktop</span>
+          </div>
+        </div>
+      </div>
+
       <Card className="w-full max-w-7xl bg-gray-800 border-gray-700">
         <CardContent className="py-4 sm:py-8 px-2 sm:px-6">
           <div className="space-y-8">
@@ -379,18 +531,15 @@ export default function CountdownTimer() {
                         overflow: "hidden",
                       }}
                       onKeyDown={(e) => {
-                        // Stop the event from bubbling up to the global handler
                         e.stopPropagation()
 
                         if (e.key === "Enter") {
                           if (e.shiftKey) {
-                            // SHIFT+ENTER : passer à la ligne (comportement par défaut)
                             const lines = timer.label.split("\n")
                             if (lines.length >= 2) {
-                              e.preventDefault() // Empêcher si déjà 2 lignes
+                              e.preventDefault()
                             }
                           } else {
-                            // ENTER seul : valider et revenir à la sélection du timer
                             e.preventDefault()
                             setEditingLabel(null)
                             setSelectedTimer(timer.id)
@@ -447,7 +596,7 @@ export default function CountdownTimer() {
                   )}
                 </div>
 
-                {/* Control Buttons - Always show UP and DOWN */}
+                {/* Control Buttons */}
                 <div className="flex flex-col gap-1 sm:gap-2 flex-shrink-0">
                   <Button
                     onClick={() => (timer.isInputMode ? handleModeSelect(timer.id, "up") : undefined)}

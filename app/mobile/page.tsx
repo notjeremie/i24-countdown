@@ -1,40 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useRouter } from "next/navigation"
 
-export default function HomePage() {
-  const [isMobile, setIsMobile] = useState<boolean | null>(null)
+export default function MobileHomePage() {
   const [isCreating, setIsCreating] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
   const [joinCode, setJoinCode] = useState("")
   const [error, setError] = useState("")
   const router = useRouter()
-
-  // Detect if device is mobile
-  useEffect(() => {
-    const checkMobile = () => {
-      const userAgent = navigator.userAgent.toLowerCase()
-      const mobileKeywords = ["mobile", "android", "iphone", "ipad", "ipod", "blackberry", "windows phone"]
-      const isMobileDevice = mobileKeywords.some((keyword) => userAgent.includes(keyword))
-
-      // Also check screen size as backup
-      const isSmallScreen = window.innerWidth <= 768
-
-      return isMobileDevice || isSmallScreen
-    }
-
-    const mobile = checkMobile()
-    setIsMobile(mobile)
-
-    // If it's a desktop/computer, automatically create a room
-    if (!mobile) {
-      createRoom()
-    }
-  }, [])
 
   const createRoom = async () => {
     setIsCreating(true)
@@ -47,10 +24,11 @@ export default function HomePage() {
       })
       const data = await response.json()
       if (data.roomCode) {
-        router.push(`/timer/${data.roomCode}`)
+        router.push(`/mobile/${data.roomCode}`)
       }
     } catch (error) {
       setError("Failed to create room")
+    } finally {
       setIsCreating(false)
     }
   }
@@ -82,35 +60,6 @@ export default function HomePage() {
     }
   }
 
-  // Show loading while detecting device type
-  if (isMobile === null) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-gray-800 border-gray-700">
-          <CardContent className="p-8 text-center">
-            <div className="text-white text-lg">Loading...</div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Show loading for desktop while auto-creating room
-  if (!isMobile) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-gray-800 border-gray-700">
-          <CardContent className="p-8 text-center">
-            <div className="text-white text-lg mb-4">Creating your timer room...</div>
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-            {error && <div className="text-red-400 text-sm mt-4">{error}</div>}
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Mobile interface - show options
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <Card className="w-full max-w-md bg-gray-800 border-gray-700">
@@ -122,7 +71,7 @@ export default function HomePage() {
           {/* Create New Room */}
           <div className="space-y-3">
             <h3 className="text-white text-lg font-semibold">Create New Session</h3>
-            <p className="text-gray-400 text-sm">Start a new timer session that others can join</p>
+            <p className="text-gray-400 text-sm">Start a new timer session</p>
             <Button
               onClick={createRoom}
               disabled={isCreating}
@@ -136,7 +85,7 @@ export default function HomePage() {
             {/* Join Existing Room */}
             <div className="space-y-3">
               <h3 className="text-white text-lg font-semibold">Join Existing Session</h3>
-              <p className="text-gray-400 text-sm">Enter the room code from a computer or another device</p>
+              <p className="text-gray-400 text-sm">Enter the room code from another device</p>
               <Input
                 type="text"
                 placeholder="Enter room code (e.g., ABC123)"
@@ -159,8 +108,7 @@ export default function HomePage() {
 
           {/* Help Text */}
           <div className="text-center text-xs text-gray-500 pt-4 border-t border-gray-700">
-            💡 Tip: Open this app on a computer to automatically create a session, then use this mobile interface to
-            control it remotely.
+            💡 Tip: Open this app on a computer to automatically create a session with a larger display.
           </div>
         </CardContent>
       </Card>

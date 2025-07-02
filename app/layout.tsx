@@ -1,16 +1,15 @@
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import './globals.css'
+import type React from "react"
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: 'i24 Countdown',
-  description: 'Application de countdown',
+  title: "i24 Countdown",
+  description: "Professional countdown timer application for live broadcasts and events",
+    generator: 'v0.dev'
 }
-
-// IMPORTANT : Forcer le rendu statique
-export const dynamic = 'force-static'
 
 export default function RootLayout({
   children,
