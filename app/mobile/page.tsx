@@ -68,17 +68,41 @@ export default function MobileHomePage() {
           <p className="text-center text-gray-400 text-sm">Connect to a timer session</p>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Create New Room */}
+          {/* Quick Access to Default Rooms */}
           <div className="space-y-3">
-            <h3 className="text-white text-lg font-semibold">Create New Session</h3>
-            <p className="text-gray-400 text-sm">Start a new timer session</p>
-            <Button
-              onClick={createRoom}
-              disabled={isCreating}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3"
-            >
-              {isCreating ? "Creating..." : "Create New Session"}
-            </Button>
+            <h3 className="text-white text-lg font-semibold">Quick Access</h3>
+            <p className="text-gray-400 text-sm">Connect to default control rooms</p>
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                onClick={() => router.push("/mobile/CTRLFR")}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 flex items-center justify-between"
+              >
+                <span>Control Room FR</span>
+                <span className="text-xs bg-purple-800 px-2 py-1 rounded">CTRLFR</span>
+              </Button>
+              <Button
+                onClick={() => router.push("/mobile/CTRLEN")}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 flex items-center justify-between"
+              >
+                <span>Control Room EN</span>
+                <span className="text-xs bg-indigo-800 px-2 py-1 rounded">CTRLEN</span>
+              </Button>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-600 pt-6">
+            {/* Create New Room */}
+            <div className="space-y-3">
+              <h3 className="text-white text-lg font-semibold">Create New Session</h3>
+              <p className="text-gray-400 text-sm">Start a new timer session</p>
+              <Button
+                onClick={createRoom}
+                disabled={isCreating}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3"
+              >
+                {isCreating ? "Creating..." : "Create New Session"}
+              </Button>
+            </div>
           </div>
 
           <div className="border-t border-gray-600 pt-6">

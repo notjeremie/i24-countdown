@@ -1,5 +1,66 @@
-// Shared room storage
-export const rooms = new Map<string, any>()
+// Initialize with default rooms
+export const rooms = new Map<string, any>([
+  [
+    "CTRLFR",
+    {
+      timers: [
+        {
+          id: 0,
+          input: "",
+          timeLeft: 0,
+          isRunning: false,
+          isInputMode: true,
+          isCountingUp: false,
+          selectedMode: null,
+          label: "",
+        },
+        {
+          id: 1,
+          input: "",
+          timeLeft: 0,
+          isRunning: false,
+          isInputMode: true,
+          isCountingUp: false,
+          selectedMode: null,
+          label: "",
+        },
+      ],
+      selectedTimer: 0,
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+    },
+  ],
+  [
+    "CTRLEN",
+    {
+      timers: [
+        {
+          id: 0,
+          input: "",
+          timeLeft: 0,
+          isRunning: false,
+          isInputMode: true,
+          isCountingUp: false,
+          selectedMode: null,
+          label: "",
+        },
+        {
+          id: 1,
+          input: "",
+          timeLeft: 0,
+          isRunning: false,
+          isInputMode: true,
+          isCountingUp: false,
+          selectedMode: null,
+          label: "",
+        },
+      ],
+      selectedTimer: 0,
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+    },
+  ],
+])
 
 // Generate a random 6-character room code
 export function generateRoomCode(): string {
@@ -38,4 +99,12 @@ export function getDefaultTimerState() {
     ],
     selectedTimer: 0,
   }
+}
+
+// Get list of default rooms
+export function getDefaultRooms() {
+  return [
+    { code: "CTRLFR", name: "Control Room FR" },
+    { code: "CTRLEN", name: "Control Room EN" },
+  ]
 }
