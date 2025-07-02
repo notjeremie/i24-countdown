@@ -101,8 +101,7 @@ export default function HomePage() {
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl bg-gray-800 border-gray-700">
           <CardHeader>
-            <CardTitle className="text-center text-white text-3xl mb-2">Countdown Timer</CardTitle>
-            <p className="text-center text-gray-400 text-lg">Professional Broadcast Timer System</p>
+            <CardTitle className="text-center text-white text-3xl mb-2">i24 Countdown</CardTitle>
           </CardHeader>
           <CardContent className="space-y-8 p-8">
             {/* Default Control Rooms */}
@@ -198,8 +197,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <Card className="w-full max-w-md bg-gray-800 border-gray-700">
         <CardHeader>
-          <CardTitle className="text-center text-white text-2xl">Timer Control</CardTitle>
-          <p className="text-center text-gray-400 text-sm">Connect to a timer session</p>
+          <CardTitle className="text-center text-white text-2xl">i24 Countdown</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Quick Access to Default Rooms */}
@@ -263,11 +261,6 @@ export default function HomePage() {
           </div>
 
           {error && <div className="text-red-400 text-center text-sm">{error}</div>}
-
-          {/* Help Text */}
-          <div className="text-center text-xs text-gray-500 pt-4 border-t border-gray-700">
-            💡 Tip: Open this app on a computer to get the full broadcast display with larger timers.
-          </div>
         </CardContent>
       </Card>
     </div>

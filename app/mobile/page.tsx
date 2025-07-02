@@ -64,8 +64,7 @@ export default function MobileHomePage() {
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <Card className="w-full max-w-md bg-gray-800 border-gray-700">
         <CardHeader>
-          <CardTitle className="text-center text-white text-2xl">Timer Control</CardTitle>
-          <p className="text-center text-gray-400 text-sm">Connect to a timer session</p>
+          <CardTitle className="text-center text-white text-2xl">i24 Countdown</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Quick Access to Default Rooms */}
@@ -77,14 +76,14 @@ export default function MobileHomePage() {
                 onClick={() => router.push("/mobile/CTRLFR")}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 flex items-center justify-between"
               >
-                <span>Control Room FR</span>
+                <span>🇫🇷 Control Room FR</span>
                 <span className="text-xs bg-purple-800 px-2 py-1 rounded">CTRLFR</span>
               </Button>
               <Button
                 onClick={() => router.push("/mobile/CTRLEN")}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 flex items-center justify-between"
               >
-                <span>Control Room EN</span>
+                <span>🇬🇧 Control Room EN</span>
                 <span className="text-xs bg-indigo-800 px-2 py-1 rounded">CTRLEN</span>
               </Button>
             </div>
@@ -129,11 +128,6 @@ export default function MobileHomePage() {
           </div>
 
           {error && <div className="text-red-400 text-center text-sm">{error}</div>}
-
-          {/* Help Text */}
-          <div className="text-center text-xs text-gray-500 pt-4 border-t border-gray-700">
-            💡 Tip: Open this app on a computer to automatically create a session with a larger display.
-          </div>
         </CardContent>
       </Card>
     </div>
