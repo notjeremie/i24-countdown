@@ -127,6 +127,20 @@ export default function MobileHomePage() {
             </div>
           </div>
 
+          <div className="border-t border-gray-600 pt-6">
+            {/* Offline Mode */}
+            <div className="space-y-3">
+              <h3 className="text-white text-lg font-semibold">Offline Mode</h3>
+              <p className="text-gray-400 text-sm">Use timers locally without remote control</p>
+              <Button
+                onClick={() => router.push("/offline")}
+                className="w-full bg-gray-600 hover:bg-gray-700 text-white py-3"
+              >
+                Start Offline Mode
+              </Button>
+            </div>
+          </div>
+
           {error && <div className="text-red-400 text-center text-sm">{error}</div>}
         </CardContent>
       </Card>

@@ -177,6 +177,24 @@ export default function HomePage() {
               </div>
             </div>
 
+            <div className="border-t border-gray-600 pt-8">
+              {/* Offline Mode */}
+              <div className="space-y-4">
+                <h3 className="text-white text-xl font-semibold text-center">Offline Mode</h3>
+                <p className="text-gray-400 text-center">
+                  Use timers locally on this computer only (no remote control)
+                </p>
+                <div className="flex justify-center">
+                  <Button
+                    onClick={() => router.push("/offline")}
+                    className="h-16 px-8 bg-gray-600 hover:bg-gray-700 text-white text-lg font-bold transition-all duration-200 hover:scale-105"
+                  >
+                    Start Offline Mode
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             {error && (
               <div className="bg-red-900/30 border border-red-500 text-red-400 text-center p-4 rounded-lg">{error}</div>
             )}
