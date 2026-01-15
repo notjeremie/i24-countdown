@@ -355,6 +355,10 @@ export default function CountdownTimer() {
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [selectedTimer, timers, editingLabel])
 
+  const isTimerFinished = (timer: Timer) => {
+    return timer.timeLeft <= 10 && !timer.isCountingUp
+  }
+
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-2 sm:p-4">
       <div className="absolute top-4 right-4 z-10">
@@ -433,11 +437,13 @@ export default function CountdownTimer() {
                     <div
                       onClick={() => handleReset(timer.id)}
                       className={`font-mono font-bold p-2 rounded-lg border-2 cursor-pointer text-red-600 text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl tracking-tight text-center leading-tight h-16 sm:h-20 md:h-24 flex items-center justify-center ${
-                        timer.timeLeft <= 10 && !timer.isCountingUp
-                          ? "bg-red-900/30 animate-pulse border-solid border-red-500"
-                          : timer.isCountingUp
-                            ? "bg-green-900/30 border-solid border-green-500"
-                            : "bg-red-900/30 border-solid border-red-500"
+                        timer.isCountingUp && timer.isRunning
+                          ? "bg-green-900/30 border-solid border-green-500"
+                          : isTimerFinished(timer)
+                            ? "bg-gray-900/50 border-solid border-gray-400"
+                            : timer.isRunning
+                              ? "bg-red-900/30 border-solid border-red-500"
+                              : "bg-gray-700/50 border-solid border-gray-500"
                       } ${
                         selectedTimer === timer.id ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-gray-800" : ""
                       }`}

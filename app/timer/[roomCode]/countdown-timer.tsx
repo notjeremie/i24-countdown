@@ -4,6 +4,7 @@ import type React from "react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Timer {
   id: number
@@ -13,7 +14,13 @@ interface Timer {
   isInputMode: boolean
   isCountingUp: boolean
   selectedMode: "up" | "down" | null
-  label: string
+  labelId: string
+}
+
+interface Label {
+  id: string
+  text: string
+  order: number
 }
 
 interface CountdownTimerProps {
@@ -30,7 +37,7 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
       isInputMode: true,
       isCountingUp: false,
       selectedMode: null,
-      label: "",
+      labelId: "",
     },
     {
       id: 1,
@@ -40,12 +47,12 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
       isInputMode: true,
       isCountingUp: false,
       selectedMode: null,
-      label: "",
+      labelId: "",
     },
   ])
+  const [labels, setLabels] = useState<Label[]>([])
   const intervalRefs = useRef<{ [key: number]: NodeJS.Timeout | null }>({})
   const [selectedTimer, setSelectedTimer] = useState<number | null>(0)
-  const [editingLabel, setEditingLabel] = useState<number | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("connecting")
@@ -58,6 +65,29 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
   // Generate mobile URL and QR code
   const mobileUrl = `${window.location.origin}/mobile/${roomCode}`
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(mobileUrl)}`
+
+  // Fetch labels on component mount
+  useEffect(() => {
+    fetchLabels()
+  }, [])
+
+  const fetchLabels = async () => {
+    try {
+      const response = await fetch("/api/labels")
+      if (response.ok) {
+        const data = await response.json()
+        setLabels(data.labels || [])
+      }
+    } catch (error) {
+      console.error("Failed to fetch labels:", error)
+    }
+  }
+
+  // Get label text by ID
+  const getLabelText = (labelId: string) => {
+    const label = labels.find((l) => l.id === labelId)
+    return label ? label.text : ""
+  }
 
   // Copy room code to clipboard
   const copyRoomCode = () => {
@@ -291,26 +321,26 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
   }
 
   // Handle label change for specific timer
-  const handleLabelChange = (id: number, value: string) => {
-    const processedValue = value
-    const lines = processedValue.split("\n")
-    const limitedLines = []
-    for (let i = 0; i < Math.min(lines.length, 2); i++) {
-      limitedLines.push(lines[i].slice(0, 5))
-    }
-
+  const handleLabelChange = (id: number, labelId: string) => {
     // Update local state and sync to server
-    const updatedTimers = timers.map((timer) =>
-      timer.id === id ? { ...timer, label: limitedLines.join("\n") } : timer,
-    )
+    const updatedTimers = timers.map((timer) => (timer.id === id ? { ...timer, labelId } : timer))
     setTimers(updatedTimers)
     syncToServer({ timers: updatedTimers, selectedTimer })
   }
 
   // Handle Enter key press for specific timer
   const handleKeyPress = (id: number, e: React.KeyboardEvent, input: string) => {
-    if (e.key === "Enter" && input) {
-      sendCommand("enter")
+    if (e.key === "Enter") {
+      const formattedTime = formatInput(input)
+      const seconds = timeToSeconds(formattedTime)
+
+      // If no time entered or time is 00:00:00, automatically count UP
+      if (seconds === 0) {
+        sendCommand("enterZero") // New command for starting from zero
+      } else {
+        // If any time is entered, use normal enter logic
+        sendCommand("enter")
+      }
     }
   }
 
@@ -362,14 +392,34 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
   useEffect(() => {
     timers.forEach((timer) => {
       if (timer.isRunning) {
+        const startTime = Date.now()
+        const initialTimeLeft = timer.timeLeft
+
+        if (!timer.isCountingUp && timer.timeLeft > 1) {
+          setTimers((prevTimers) =>
+            prevTimers.map((t) => {
+              if (t.id === timer.id && t.isRunning && !t.isCountingUp) {
+                return { ...t, timeLeft: t.timeLeft - 1 }
+              }
+              return t
+            }),
+          )
+        }
+
         intervalRefs.current[timer.id] = setInterval(() => {
           setTimers((prevTimers) =>
             prevTimers.map((t) => {
-              if (t.id === timer.id) {
+              if (t.id === timer.id && t.isRunning) {
+                const elapsedMs = Date.now() - startTime
+
                 if (t.isCountingUp) {
-                  return { ...t, timeLeft: t.timeLeft + 1 }
+                  const elapsedSeconds = Math.floor(elapsedMs / 1000)
+                  const newTime = initialTimeLeft + elapsedSeconds
+                  return { ...t, timeLeft: newTime }
                 } else {
-                  if (t.timeLeft <= 1) {
+                  const elapsedSeconds = Math.floor(elapsedMs / 1000) + 1
+                  const newTime = initialTimeLeft - elapsedSeconds
+                  if (newTime <= 0) {
                     // Timer finished - preserve the label and sync to server
                     console.log(`Timer ${timer.id} finished, syncing to server`)
 
@@ -394,11 +444,11 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
                       isInputMode: true,
                       input: "",
                       selectedMode: null,
-                      // KEEP the label - don't reset it!
-                      label: t.label,
+                      // KEEP the labelId - don't reset it!
+                      labelId: t.labelId,
                     }
                   }
-                  return { ...t, timeLeft: t.timeLeft - 1 }
+                  return { ...t, timeLeft: newTime }
                 }
               }
               return t
@@ -440,10 +490,6 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (editingLabel !== null) {
-        return
-      }
-
       if (e.key === "ArrowUp") {
         e.preventDefault()
         const newSelected = selectedTimer === null ? 0 : selectedTimer > 0 ? selectedTimer - 1 : timers.length - 1
@@ -460,14 +506,6 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
         return
       }
 
-      if (e.key === "ArrowLeft") {
-        e.preventDefault()
-        if (selectedTimer !== null) {
-          setEditingLabel(selectedTimer)
-        }
-        return
-      }
-
       if (selectedTimer !== null) {
         handleNumberInput(e as any)
       }
@@ -475,7 +513,7 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [selectedTimer, timers, editingLabel])
+  }, [selectedTimer, timers])
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-2 sm:p-4">
@@ -517,52 +555,23 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
           <div className="space-y-8">
             {timers.map((timer, index) => (
               <div key={timer.id} className="flex items-center justify-center gap-2 sm:gap-4">
-                {/* Label Input */}
+                {/* Label Dropdown */}
                 <div className="w-24 sm:w-32 md:w-40 h-16 sm:h-20 md:h-24 bg-gray-700 border border-gray-600 rounded relative flex-shrink-0">
-                  {editingLabel === timer.id ? (
-                    <textarea
-                      value={timer.label}
-                      onChange={(e) => handleLabelChange(timer.id, e.target.value)}
-                      onBlur={() => setEditingLabel(null)}
-                      autoFocus
-                      className="w-full h-full bg-transparent text-yellow-400 text-xl sm:text-2xl md:text-4xl font-bold text-center resize-none border-none outline-none p-1 sm:p-2"
-                      style={{
-                        lineHeight: "1.2",
-                        overflow: "hidden",
-                      }}
-                      onKeyDown={(e) => {
-                        e.stopPropagation()
-
-                        if (e.key === "Enter") {
-                          if (e.shiftKey) {
-                            const lines = timer.label.split("\n")
-                            if (lines.length >= 2) {
-                              e.preventDefault()
-                            }
-                          } else {
-                            e.preventDefault()
-                            setEditingLabel(null)
-                            setSelectedTimer(timer.id)
-                          }
-                        }
-                        if (e.key === "Escape") {
-                          setEditingLabel(null)
-                          setSelectedTimer(timer.id)
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div
-                      className="w-full h-full flex items-center justify-center text-yellow-400 text-4xl font-bold cursor-pointer"
-                      onClick={() => setEditingLabel(timer.id)}
-                      style={{
-                        lineHeight: "1.2",
-                        whiteSpace: "pre-line",
-                      }}
-                    >
-                      {timer.label || ""}
-                    </div>
-                  )}
+                  <Select value={timer.labelId} onValueChange={(labelId) => handleLabelChange(timer.id, labelId)}>
+                    <SelectTrigger className="w-full h-full bg-transparent border-none text-yellow-400 text-xl sm:text-2xl md:text-4xl font-bold">
+                      <SelectValue placeholder="Label">{getLabelText(timer.labelId) || ""}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-800 border-gray-600">
+                      <SelectItem value="" className="text-gray-400">
+                        No Label
+                      </SelectItem>
+                      {labels.map((label) => (
+                        <SelectItem key={label.id} value={label.id} className="text-yellow-400 font-bold">
+                          {label.text}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Timer Display */}
@@ -582,11 +591,12 @@ export default function CountdownTimer({ roomCode }: CountdownTimerProps) {
                     <div
                       onClick={() => handleReset(timer.id)}
                       className={`font-mono font-bold p-2 rounded-lg border-2 cursor-pointer text-red-600 text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl tracking-tight text-center leading-tight h-16 sm:h-20 md:h-24 flex items-center justify-center ${
-                        timer.timeLeft <= 10 && !timer.isCountingUp
-                          ? "bg-red-900/30 animate-pulse border-solid border-red-500"
-                          : timer.isCountingUp
-                            ? "bg-green-900/30 border-solid border-green-500"
-                            : "bg-red-900/30 border-solid border-red-500"
+                        // FIXED: Removed animate-pulse - no more blinking
+                        timer.isCountingUp && timer.isRunning
+                          ? "bg-green-900/30 border-solid border-green-500"
+                          : timer.isRunning
+                            ? "bg-red-900/30 border-solid border-red-500"
+                            : "bg-gray-700/50 border-solid border-gray-500"
                       } ${
                         selectedTimer === timer.id ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-gray-800" : ""
                       }`}

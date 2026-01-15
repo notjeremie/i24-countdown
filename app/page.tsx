@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useRouter } from "next/navigation"
+import { Settings } from "lucide-react"
 
 export default function HomePage() {
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
@@ -99,6 +100,18 @@ export default function HomePage() {
   if (!isMobile) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        {/* Admin Button */}
+        <div className="absolute top-4 right-4">
+          <Button
+            onClick={() => router.push("/admin")}
+            variant="outline"
+            className="bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Admin
+          </Button>
+        </div>
+
         <Card className="w-full max-w-2xl bg-gray-800 border-gray-700">
           <CardHeader>
             <CardTitle className="text-center text-white text-3xl mb-2">i24 Countdown</CardTitle>
@@ -114,7 +127,7 @@ export default function HomePage() {
                   onClick={() => connectToDefaultRoom("CTRLFR")}
                   className="h-24 bg-purple-600 hover:bg-purple-700 text-white text-lg font-bold flex flex-col items-center justify-center space-y-2 transition-all duration-200 hover:scale-105"
                 >
-                  <div className="text-xl">🇫🇷 Control Room FR</div>
+                  <div className="text-xl">Control Room FR</div>
                   <div className="text-sm bg-purple-800 px-3 py-1 rounded font-mono">CTRLFR</div>
                 </Button>
 
@@ -122,7 +135,7 @@ export default function HomePage() {
                   onClick={() => connectToDefaultRoom("CTRLEN")}
                   className="h-24 bg-indigo-600 hover:bg-indigo-700 text-white text-lg font-bold flex flex-col items-center justify-center space-y-2 transition-all duration-200 hover:scale-105"
                 >
-                  <div className="text-xl">🇬🇧 Control Room EN</div>
+                  <div className="text-xl">Control Room EN</div>
                   <div className="text-sm bg-indigo-800 px-3 py-1 rounded font-mono">CTRLEN</div>
                 </Button>
               </div>
@@ -198,12 +211,6 @@ export default function HomePage() {
             {error && (
               <div className="bg-red-900/30 border border-red-500 text-red-400 text-center p-4 rounded-lg">{error}</div>
             )}
-
-            {/* Help Text */}
-            <div className="text-center text-sm text-gray-500 pt-4 border-t border-gray-700">
-              💡 <strong>Pro Tip:</strong> Use your mobile device to control timers remotely by connecting to the same
-              room code
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -227,14 +234,14 @@ export default function HomePage() {
                 onClick={() => router.push("/mobile/CTRLFR")}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 flex items-center justify-between"
               >
-                <span>🇫🇷 Control Room FR</span>
+                <span>Control Room FR</span>
                 <span className="text-xs bg-purple-800 px-2 py-1 rounded">CTRLFR</span>
               </Button>
               <Button
                 onClick={() => router.push("/mobile/CTRLEN")}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 flex items-center justify-between"
               >
-                <span>🇬🇧 Control Room EN</span>
+                <span>Control Room EN</span>
                 <span className="text-xs bg-indigo-800 px-2 py-1 rounded">CTRLEN</span>
               </Button>
             </div>

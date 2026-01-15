@@ -1,9 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { broadcastUpdate } from "../stream/route"
 import { rooms } from "@/lib/rooms"
+import { getAllLabels, getLabelById } from "@/lib/labels"
 
 export async function POST(request: NextRequest) {
-  const { command, timerId, value, roomCode, input, selectedMode } = await request.json()
+  const { command, timerId, value, roomCode, input, selectedMode, labelIndex } = await request.json()
 
   if (!roomCode || !rooms.has(roomCode)) {
     return NextResponse.json({ error: "Room not found" }, { status: 404 })
@@ -41,28 +42,28 @@ export async function POST(request: NextRequest) {
       break
 
     case "delete":
-      // Preserve label when manually stopping/resetting
-      const preservedLabel = currentTimer.label
+      // Preserve labelId when manually stopping/resetting
+      const preservedLabelId = currentTimer.labelId
       currentTimer.input = ""
       currentTimer.timeLeft = 0
       currentTimer.isRunning = false
       currentTimer.isInputMode = true
       currentTimer.isCountingUp = false
       currentTimer.selectedMode = null
-      currentTimer.label = preservedLabel // Keep the label
+      currentTimer.labelId = preservedLabelId // Keep the labelId
       break
 
     case "timerFinished":
-      // Handle natural timer completion - preserve label and reset to input mode
-      const preservedLabelFinished = currentTimer.label
+      // Handle natural timer completion - preserve labelId and reset to input mode
+      const preservedLabelIdFinished = currentTimer.labelId
       currentTimer.input = ""
       currentTimer.timeLeft = 0
       currentTimer.isRunning = false
       currentTimer.isInputMode = true
       currentTimer.isCountingUp = false
       currentTimer.selectedMode = null
-      currentTimer.label = preservedLabelFinished // Keep the label
-      console.log(`Timer ${timerId} finished naturally, preserved label: "${preservedLabelFinished}"`)
+      currentTimer.labelId = preservedLabelIdFinished // Keep the labelId
+      console.log(`Timer ${timerId} finished naturally, preserved labelId: "${preservedLabelIdFinished}"`)
       break
 
     case "modeUp":
@@ -77,6 +78,19 @@ export async function POST(request: NextRequest) {
       }
       break
 
+    case "enterZero":
+      // Special case for starting from 00:00:00 - always count UP
+      if (currentTimer.isInputMode) {
+        currentTimer.input = input !== undefined ? input : currentTimer.input
+        currentTimer.timeLeft = 0
+        currentTimer.isInputMode = false
+        currentTimer.isRunning = true
+        currentTimer.isCountingUp = true // Always count up from zero
+        currentTimer.selectedMode = "up"
+        console.log(`[Server] Timer ${timerId} started counting UP from 00:00:00`)
+      }
+      break
+
     case "enter":
       if (currentTimer.isInputMode) {
         // Use input from client if provided, otherwise fall back to server state
@@ -86,14 +100,27 @@ export async function POST(request: NextRequest) {
         if (inputToUse) {
           const formattedTime = formatInput(inputToUse)
           const seconds = timeToSeconds(formattedTime)
-          if (seconds > 0) {
-            currentTimer.input = inputToUse // Update server state with client input
+
+          // If time is 00:00:00, automatically count UP
+          if (seconds === 0) {
+            currentTimer.input = inputToUse
+            currentTimer.timeLeft = 0
+            currentTimer.isInputMode = false
+            currentTimer.isRunning = true
+            currentTimer.isCountingUp = true // Always count up from zero
+            currentTimer.selectedMode = "up"
+            console.log(`[Server] Timer ${timerId} started counting UP from 00:00:00`)
+          } else if (seconds > 0) {
+            // If any time is entered, use the selected mode
+            currentTimer.input = inputToUse
             currentTimer.timeLeft = seconds
             currentTimer.isInputMode = false
             currentTimer.isRunning = true
             currentTimer.isCountingUp = modeToUse === "up"
             currentTimer.selectedMode = modeToUse
-            console.log(`[Server] Timer ${timerId} started with input: "${inputToUse}" (${seconds}s)`)
+            console.log(
+              `[Server] Timer ${timerId} started with input: "${inputToUse}" (${seconds}s), mode: ${modeToUse}`,
+            )
           }
         }
       }
@@ -105,9 +132,25 @@ export async function POST(request: NextRequest) {
       }
       break
 
+    case "setLabel":
+      if (labelIndex !== undefined) {
+        const labels = getAllLabels()
+        const label = labels[labelIndex - 1] // labelIndex is 1-based
+        if (label) {
+          const targetTimerId = room.selectedTimer
+          room.timers[targetTimerId].labelId = label.id
+          console.log(`[Server] Set label for selected timer ${targetTimerId}: "${label.text}" (index ${labelIndex})`)
+        } else {
+          console.log(`[Server] Label index ${labelIndex} not found`)
+        }
+      }
+      break
+
     case "updateLabel":
       if (timerId !== undefined && value !== undefined) {
-        room.timers[timerId].label = value
+        room.timers[timerId].labelId = value
+        const label = getLabelById(value)
+        console.log(`[Server] Set labelId for timer ${timerId}: "${value}" (${label?.text || "unknown"})`)
       }
       break
   }

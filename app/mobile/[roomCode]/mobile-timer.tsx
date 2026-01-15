@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Timer {
   id: number
@@ -12,7 +13,13 @@ interface Timer {
   isInputMode: boolean
   isCountingUp: boolean
   selectedMode: "up" | "down" | null
-  label: string
+  labelId: string
+}
+
+interface Label {
+  id: string
+  text: string
+  order: number
 }
 
 interface MobileTimerProps {
@@ -29,7 +36,7 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
       isInputMode: true,
       isCountingUp: false,
       selectedMode: null,
-      label: "",
+      labelId: "",
     },
     {
       id: 1,
@@ -39,14 +46,14 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
       isInputMode: true,
       isCountingUp: false,
       selectedMode: null,
-      label: "",
+      labelId: "",
     },
   ])
+  const [labels, setLabels] = useState<Label[]>([])
   const [selectedTimer, setSelectedTimer] = useState<number>(0)
   const [isConnected, setIsConnected] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<string>("Connecting...")
   const [editingLabel, setEditingLabel] = useState<number | null>(null)
-  const [labelInput, setLabelInput] = useState("")
   const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastCommandRef = useRef<number>(0)
@@ -54,6 +61,29 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
   const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const activeInputRef = useRef<{ [timerId: number]: number }>({}) // Track active input timestamps
   const inputSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null) // For debounced input sync
+
+  // Fetch labels on component mount
+  useEffect(() => {
+    fetchLabels()
+  }, [])
+
+  const fetchLabels = async () => {
+    try {
+      const response = await fetch("/api/labels")
+      if (response.ok) {
+        const data = await response.json()
+        setLabels(data.labels || [])
+      }
+    } catch (error) {
+      console.error("Failed to fetch labels:", error)
+    }
+  }
+
+  // Get label text by ID
+  const getLabelText = (labelId: string) => {
+    const label = labels.find((l) => l.id === labelId)
+    return label ? label.text : ""
+  }
 
   // Format input as hh:mm:ss
   const formatInput = (value: string) => {
@@ -154,12 +184,21 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
             : timer,
         ),
       )
-    } else if (command === "enter" && timers[timerId]?.isInputMode && timers[timerId]?.input) {
+    } else if (command === "enter" && timers[timerId]?.isInputMode) {
       const timer = timers[timerId]
-      const mode = timer.selectedMode || "down"
       const formattedTime = formatInput(timer.input)
       const seconds = timeToSeconds(formattedTime)
-      if (seconds > 0) {
+
+      // If no time entered or time is 00:00:00, automatically count UP
+      if (seconds === 0) {
+        setTimers((prev) =>
+          prev.map((t) =>
+            t.id === timerId ? { ...t, timeLeft: 0, isInputMode: false, isRunning: true, isCountingUp: true } : t,
+          ),
+        )
+      } else {
+        // If any time is entered, use the selected mode (default to DOWN)
+        const mode = timer.selectedMode || "down"
         setTimers((prev) =>
           prev.map((t) =>
             t.id === timerId
@@ -335,20 +374,10 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
   }
 
   // Update timer label using command API for proper sync
-  const updateTimerLabel = async (timerId: number, label: string) => {
+  const updateTimerLabel = async (timerId: number, labelId: string) => {
     try {
-      // Process label - limit to 2 lines, 5 chars each
-      const lines = label.split("\n")
-      const limitedLines = []
-      for (let i = 0; i < Math.min(lines.length, 2); i++) {
-        limitedLines.push(lines[i].slice(0, 5))
-      }
-      const processedLabel = limitedLines.join("\n")
-
       // Update local state immediately
-      setTimers((prevTimers) =>
-        prevTimers.map((timer) => (timer.id === timerId ? { ...timer, label: processedLabel } : timer)),
-      )
+      setTimers((prevTimers) => prevTimers.map((timer) => (timer.id === timerId ? { ...timer, labelId } : timer)))
 
       // Use command API for proper real-time sync
       await fetch("/api/timers/command", {
@@ -358,7 +387,7 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
           command: "updateLabel",
           roomCode,
           timerId,
-          value: processedLabel,
+          value: labelId,
           timestamp: Date.now(),
         }),
       })
@@ -370,25 +399,6 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
   // Handle timer card selection
   const handleTimerSelect = (timerId: number) => {
     sendCommand("selectTimer", timerId)
-  }
-
-  // Handle label editing
-  const startEditingLabel = (timerId: number) => {
-    setEditingLabel(timerId)
-    setLabelInput(timers[timerId]?.label || "")
-  }
-
-  const saveLabel = () => {
-    if (editingLabel !== null) {
-      updateTimerLabel(editingLabel, labelInput)
-      setEditingLabel(null)
-      setLabelInput("")
-    }
-  }
-
-  const cancelEditingLabel = () => {
-    setEditingLabel(null)
-    setLabelInput("")
   }
 
   // Initialize connection and fetch initial state
@@ -412,24 +422,71 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
     }
   }, [roomCode])
 
-  // Add local countdown effect for running timers - PRESERVE LABELS AND SYNC COMPLETION WITH DELAY
   useEffect(() => {
     const intervals: { [key: number]: NodeJS.Timeout } = {}
 
     timers.forEach((timer) => {
       if (timer.isRunning && !timer.isInputMode) {
+        const startTime = Date.now()
+        const initialTimeLeft = timer.timeLeft
+
+        setTimers((prevTimers) =>
+          prevTimers.map((t) => {
+            if (t.id === timer.id && t.isRunning) {
+              if (t.isCountingUp) {
+                return { ...t, timeLeft: t.timeLeft + 1 }
+              } else {
+                if (t.timeLeft <= 1) {
+                  console.log(`Timer ${timer.id} finished, will sync to server after delay`)
+
+                  setTimeout(() => {
+                    fetch("/api/timers/command", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        command: "timerFinished",
+                        roomCode,
+                        timerId: timer.id,
+                        timestamp: Date.now(),
+                      }),
+                    }).catch((error) => {
+                      console.error("Failed to sync timer completion:", error)
+                    })
+                  }, 500)
+
+                  return {
+                    ...t,
+                    timeLeft: 0,
+                    isRunning: false,
+                    isInputMode: true,
+                    input: "",
+                    selectedMode: null,
+                    labelId: t.labelId,
+                  }
+                }
+                return { ...t, timeLeft: t.timeLeft - 1 }
+              }
+            }
+            return t
+          }),
+        )
+
         intervals[timer.id] = setInterval(() => {
           setTimers((prevTimers) =>
             prevTimers.map((t) => {
               if (t.id === timer.id && t.isRunning) {
+                // Calculate elapsed seconds since start for precise timing
+                const elapsedMs = Date.now() - startTime
+                const elapsedSeconds = Math.floor(elapsedMs / 1000) + 1 // +1 because we already did first tick
+
                 if (t.isCountingUp) {
-                  return { ...t, timeLeft: t.timeLeft + 1 }
+                  const newTime = initialTimeLeft + elapsedSeconds
+                  return { ...t, timeLeft: newTime }
                 } else {
-                  if (t.timeLeft <= 1) {
-                    // Timer finished - preserve the label and sync to server with delay
+                  const newTime = initialTimeLeft - elapsedSeconds
+                  if (newTime <= 0) {
                     console.log(`Timer ${timer.id} finished, will sync to server after delay`)
 
-                    // Send completion to server after a short delay to avoid race conditions
                     setTimeout(() => {
                       fetch("/api/timers/command", {
                         method: "POST",
@@ -443,7 +500,7 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
                       }).catch((error) => {
                         console.error("Failed to sync timer completion:", error)
                       })
-                    }, 500) // 500ms delay
+                    }, 500)
 
                     return {
                       ...t,
@@ -452,10 +509,10 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
                       isInputMode: true,
                       input: "",
                       selectedMode: null,
-                      label: t.label, // Preserve label
+                      labelId: t.labelId,
                     }
                   }
-                  return { ...t, timeLeft: t.timeLeft - 1 }
+                  return { ...t, timeLeft: newTime }
                 }
               }
               return t
@@ -498,48 +555,46 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
     )
   }
 
-  // If editing a label, show the label editor
+  // If editing a label, show the label selector
   if (editingLabel !== null) {
     return (
       <div className="min-h-screen bg-black text-white p-2">
         <div className="mb-2 text-center">
           <div className="text-xs text-gray-400 mb-1">Room: {roomCode}</div>
-          <div className="text-lg font-bold">Edit Timer {editingLabel + 1} Label</div>
+          <div className="text-lg font-bold">Select Label for Timer {editingLabel + 1}</div>
         </div>
 
         <Card className="bg-gray-800 border-gray-700 mb-4">
           <CardContent className="p-4">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Timer Label (max 2 lines, 5 chars each)
-                </label>
-                <textarea
-                  value={labelInput}
-                  onChange={(e) => setLabelInput(e.target.value)}
-                  placeholder="Enter label..."
-                  className="w-full bg-gray-700 border border-gray-600 text-white placeholder-gray-400 rounded p-3 text-lg font-bold text-center resize-none"
-                  rows={2}
-                  maxLength={11} // 5 + 1 (newline) + 5
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const lines = labelInput.split("\n")
-                      if (lines.length >= 2) {
-                        e.preventDefault()
-                      }
-                    }
+                <label className="block text-sm font-medium text-gray-300 mb-2">Choose a label for this timer</label>
+                <Select
+                  value={timers[editingLabel]?.labelId || ""}
+                  onValueChange={(labelId) => {
+                    updateTimerLabel(editingLabel, labelId)
+                    setEditingLabel(null)
                   }}
-                />
+                >
+                  <SelectTrigger className="w-full bg-gray-700 border-gray-600 text-white">
+                    <SelectValue placeholder="Select a label" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-600">
+                    <SelectItem value="" className="text-gray-400">
+                      No Label
+                    </SelectItem>
+                    {labels.map((label) => (
+                      <SelectItem key={label.id} value={label.id} className="text-yellow-400 font-bold">
+                        {label.text}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="text-xs text-gray-400 text-center">Preview: {labelInput || "(empty)"}</div>
-
               <div className="flex gap-3">
-                <Button onClick={saveLabel} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3">
-                  Save Label
-                </Button>
                 <Button
-                  onClick={cancelEditingLabel}
+                  onClick={() => setEditingLabel(null)}
                   variant="outline"
                   className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3"
                 >
@@ -550,11 +605,13 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
           </CardContent>
         </Card>
 
-        <div className="text-center text-sm text-gray-400">
-          💡 Tip: Keep labels short and descriptive (e.g., "BREAK", "TALK", "Q&A")
-        </div>
+        <div className="text-center text-sm text-gray-400">💡 Tip: Labels can be managed in the admin panel</div>
       </div>
     )
+  }
+
+  const isTimerFinished = (timer: Timer) => {
+    return !timer.isCountingUp && timer.timeLeft <= 0 && timer.isRunning === false
   }
 
   return (
@@ -588,27 +645,32 @@ export default function MobileTimer({ roomCode }: MobileTimerProps) {
                 <div
                   onClick={(e) => {
                     e.stopPropagation() // Prevent timer selection
-                    startEditingLabel(timer.id)
+                    setEditingLabel(timer.id)
                   }}
                   className="min-h-[2rem] flex items-center justify-center mb-2 cursor-pointer hover:bg-gray-700 rounded p-1 transition-colors"
                 >
-                  {timer.label ? (
-                    <div className="text-yellow-400 text-base font-bold whitespace-pre-line">{timer.label}</div>
+                  {getLabelText(timer.labelId) ? (
+                    <div className="text-yellow-400 text-base font-bold">{getLabelText(timer.labelId)}</div>
                   ) : (
                     <div className="text-gray-500 text-sm italic">Tap to add label</div>
                   )}
                 </div>
 
                 <div
-                  className={`font-mono text-2xl font-bold mb-2 ${
+                  className={`font-mono font-bold p-4 rounded-lg border-2 text-3xl sm:text-4xl tracking-tight ${
                     timer.isInputMode
-                      ? "text-red-600"
-                      : timer.isCountingUp
-                        ? "text-green-400"
-                        : timer.timeLeft <= 10
-                          ? "text-red-400 animate-pulse"
-                          : "text-red-400"
-                  }`}
+                      ? selectedTimer === timer.id
+                        ? "border-solid border-red-500 bg-gray-700 text-red-600"
+                        : "border-dashed border-gray-600 bg-gray-800 text-red-600"
+                      : // FIXED: Removed animate-pulse - no more blinking
+                        timer.isCountingUp && timer.isRunning
+                        ? "bg-green-900/30 border-solid border-green-500 text-green-400"
+                        : isTimerFinished(timer)
+                          ? "bg-gray-900/50 border-solid border-gray-400 text-gray-400"
+                          : timer.isRunning
+                            ? "bg-red-900/30 border-solid border-red-500 text-red-600"
+                            : "bg-gray-700/50 border-solid border-gray-500 text-gray-400"
+                  } ${selectedTimer === timer.id ? "ring-2 ring-yellow-400" : ""}`}
                 >
                   {timer.isInputMode ? formatInput(timer.input) : formatTime(timer.timeLeft)}
                 </div>
